@@ -1,0 +1,46 @@
+---
+Language: Cpp
+BasedOnStyle: Microsoft
+
+Standard: c++20
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# === 对齐设置 ===
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignOperands: Align
+AlignTrailingComments: true
+AlignConsecutiveBitFields: true
+AlignEscapedNewlines: Left
+
+# === Lambda 表达式优化 ===
+AllowShortLambdasOnASingleLine: Empty
+BinPackArguments: false
+BinPackParameters: false
+PenaltyBreakBeforeFirstCallParameter: 100
+AlignAfterOpenBracket: BlockIndent
+ContinuationIndentWidth: 4
+
+# === 兼容性配置 ===
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: InlineOnly
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterClass: true
+  AfterControlStatement: true
+  AfterEnum: true
+  AfterStruct: true
+  AfterUnion: true
+  BeforeCatch: true
+  BeforeElse: true
+  IndentBraces: false
+
+# Lambda 体部缩进
+LambdaBodyIndentation: Signature
+
+SortIncludes: true
+SortUsingDeclarations: true
