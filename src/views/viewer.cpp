@@ -1,4 +1,5 @@
 #include "viewer.hpp"
+#include "MsgBox.h"
 
 Viewer::Viewer()
 {
@@ -42,24 +43,33 @@ void Viewer::drop_file(sw::UIElement &sender, sw::DropFilesEventArgs &e)
         return;
     }
 
-    const auto count = DragQueryFileW(e.hDrop, -1, nullptr, 0);
-    if (count == 0)
+    Text = L"JSON Viewer - loading & parsing & rendering";
+
+    if (m_treeView.AllItemsCount > 0)
     {
-        DragFinish(e.hDrop);
-        m_dropping = false;
-        Text       = L"JSON Viewer";
+        m_treeView.Clear();
+        m_treeView.Update();
+    }
+    struct DrapGuard
+    {
+        HDROP             hDrop;
+        std::atomic_bool &flag;
+        ~DrapGuard()
+        {
+            DragFinish(hDrop);
+            flag = false;
+        }
+    } guard{.hDrop = e.hDrop, .flag = m_dropping};
+
+    if (DragQueryFileW(e.hDrop, -1, nullptr, 0) == 0)
+    {
+        Text = L"JSON Viewer";
         return;
     }
 
-    if (count >= 1)
-    {
-        wchar_t filePath[MAX_PATH];
-        DragQueryFileW(e.hDrop, 0, filePath, MAX_PATH);
-        m_file = filePath;
-    }
-
-    DragFinish(e.hDrop);
-    m_dropping = false;
+    std::wstring filePath(MAX_PATH, L'\0');
+    DragQueryFileW(e.hDrop, 0, filePath.data(), MAX_PATH);
+    m_file = std::move(filePath);
 
     if (!m_file.empty())
     {
@@ -78,13 +88,16 @@ void Viewer::parse_file()
     {
         m_json = padded_string::load(sw::Utils::ToMultiByteStr(m_file));
         fill_tree_root();
+        const auto filename = get_filename_from_path(m_file);
+        Text                = std::format(L"JSON Viewer - {}", filename);
     }
-    catch (...)
+    catch (const std::exception &e)
     {
-        m_treeView.Clear();
-        m_treeView.AddItem(L"[文件加载或解析失败]");
-        Text = L"JSON Viewer - 解析失败";
-        OutputDebugStringW(L"JSON文件解析失败\n");
+
+        Text = L"JSON Viewer";
+        sw::MsgBox::ShowWarning(
+            sw::Utils::ToWideStr(e.what()), L"JSON Viewer", sw::MsgBoxButton::Ok
+        );
     }
 
     m_parsing = false;
@@ -92,23 +105,26 @@ void Viewer::parse_file()
 
 void Viewer::fill_tree_root()
 {
-    m_treeView.Clear();
+    if (m_treeView.AllItemsCount > 0)
+    {
+        m_treeView.Clear();
+    }
     try
     {
-        ondemand::document doc               = m_parser.iterate(m_json);
-        auto               root_value        = doc.get_value();
-        auto               value_type_result = root_value.type();
+        document doc               = m_parser.iterate(m_json);
+        auto     root_value        = doc.get_value();
+        auto     value_type_result = root_value.type();
 
         if (value_type_result.error() == SUCCESS)
         {
             const auto type = value_type_result.value();
             if (type == json_type::object)
             {
-                fill_tree_with_path(root_value.get_object(), m_treeView, "$");
+                fill_tree_with_path(root_value.get_object(), m_treeView, "$", doc);
             }
             else if (type == json_type::array)
             {
-                fill_tree_with_path(root_value.get_array(), m_treeView, "$");
+                fill_tree_with_path(root_value.get_array(), m_treeView, "$", doc);
             }
             else
             {
@@ -116,14 +132,23 @@ void Viewer::fill_tree_root()
             }
         }
     }
-    catch (...)
+    catch (simdjson_error &e)
+    {
+        sw::MsgBox::ShowWarning(
+            sw::Utils::ToWideStr(e.what()), L"JSON Viewer", sw::MsgBoxButton::Ok
+        );
+    }
+    catch (const std::exception &e)
     {
         m_treeView.AddItem(L"[解析失败]");
+        sw::MsgBox::ShowWarning(
+            sw::Utils::ToWideStr(e.what()), L"JSON Viewer", sw::MsgBoxButton::Ok
+        );
     }
 }
 
 void Viewer::fill_tree_with_path(
-    object object, sw::TreeView &tree_view, const std::string &base_path
+    object object, sw::TreeView &tree_view, const std::string &base_path, const document &doc
 )
 {
     try
@@ -145,9 +170,9 @@ void Viewer::fill_tree_with_path(
                 continue;
             }
 
-            std::wstring value_preview = get_value_preview(value);
-            auto         text          = key + L": " + value_preview;
-            auto         node          = tree_view.AddItem(text);
+            std::wstring value_preview = L": " + get_value_preview(value);
+            const auto   text          = std::format(L"{0}: {1}", key, value_preview);
+            const auto   node          = tree_view.AddItem(text);
 
             if (has_children(value))
             {
@@ -164,12 +189,28 @@ void Viewer::fill_tree_with_path(
             }
         }
     }
-    catch (...)
+    catch ([[maybe_unused]] simdjson_error &e)
     {
+        if (const char *error_msg; doc.current_location().get(error_msg) == SUCCESS)
+        {
+            size_t      line  = 1;
+            const char *start = m_json.data();
+            for (const char *p = start; p < error_msg; ++p)
+            {
+                if (*p == '\n')
+                {
+                    line++;
+                }
+            }
+            const std::wstring text = L"json parse error at line: " + std::to_wstring(line);
+            sw::MsgBox::ShowWarning(text, L"JSON Viewer", sw::MsgBoxButton::Ok);
+        }
     }
 }
 
-void Viewer::fill_tree_with_path(array array, sw::TreeView &tree_view, const std::string &base_path)
+void Viewer::fill_tree_with_path(
+    array array, sw::TreeView &tree_view, const std::string &base_path, document &doc
+)
 {
     try
     {
@@ -185,7 +226,7 @@ void Viewer::fill_tree_with_path(array array, sw::TreeView &tree_view, const std
             const auto value         = element.value();
             auto       value_preview = get_value_preview(value);
 
-            const auto text = std::to_wstring(idx) + L": " + value_preview;
+            const auto text = std::format(L"{0}: {1}", idx, value_preview);
             auto       node = tree_view.AddItem(text);
 
             if (has_children(value))
@@ -204,13 +245,27 @@ void Viewer::fill_tree_with_path(array array, sw::TreeView &tree_view, const std
             ++idx;
         }
     }
-    catch (...)
+    catch ([[maybe_unused]] simdjson_error &e)
     {
+        if (const char *error_msg; doc.current_location().get(error_msg) == SUCCESS)
+        {
+            size_t      line  = 1;
+            const char *start = m_json.data();
+            for (const char *p = start; p < error_msg; ++p)
+            {
+                if (*p == '\n')
+                {
+                    line++;
+                }
+            }
+            const std::wstring text = L"json parse error at line: " + std::to_wstring(line);
+            sw::MsgBox::ShowWarning(text, L"JSON Viewer", sw::MsgBoxButton::Ok);
+        }
     }
 }
 
 void Viewer::fill_tree_with_path(
-    object object, const sw::TreeViewNode &parent, const std::string &base_path
+    object object, const sw::TreeViewNode &parent, const std::string &base_path, const document &doc
 )
 {
     try
@@ -222,38 +277,48 @@ void Viewer::fill_tree_with_path(
 
             auto value_result = field.value();
             if (value_result.error() != SUCCESS)
+            {
                 continue;
+            }
             auto value             = value_result.value();
             auto value_type_result = value.type();
             if (value_type_result.error() != SUCCESS)
+            {
                 continue;
+            }
 
             std::wstring value_preview = get_value_preview(value);
-            auto         text          = key + L": " + value_preview;
-            auto         node          = parent.AddChild(text);
+            const auto   text          = std::format(L"{0}: {1}", key, value_preview);
+            const auto   node          = parent.AddChild(text);
 
             if (has_children(value))
             {
-                std::string current_path;
-                if (base_path.empty() || base_path == "$")
-                {
-                    current_path = "$." + std::string(key_view);
-                }
-                else
-                {
-                    current_path = base_path + "." + std::string(key_view);
-                }
+                const auto current_path = build_object_path(base_path, key_view);
                 add_placeholder_child(node, current_path);
             }
         }
     }
-    catch (...)
+    catch ([[maybe_unused]] simdjson_error &e)
     {
+        if (const char *error_msg; doc.current_location().get(error_msg) == SUCCESS)
+        {
+            size_t      line  = 1;
+            const char *start = m_json.data();
+            for (const char *p = start; p < error_msg; ++p)
+            {
+                if (*p == '\n')
+                {
+                    line++;
+                }
+            }
+            const std::wstring text = L"json parse error at line: " + std::to_wstring(line);
+            sw::MsgBox::ShowWarning(text, L"JSON Viewer 3", sw::MsgBoxButton::Ok);
+        }
     }
 }
 
 void Viewer::fill_tree_with_path(
-    array array, const sw::TreeViewNode &parent, const std::string &base_path
+    array array, const sw::TreeViewNode &parent, const std::string &base_path, document &doc
 )
 {
     try
@@ -269,27 +334,21 @@ void Viewer::fill_tree_with_path(
 
             if (has_children(value))
             {
-                // 构建当前项的路径 (JSONPath 格式)
-                std::string current_path;
-                if (base_path.empty() || base_path == "$")
-                {
-                    current_path = "$[" + std::to_string(idx) + "]";
-                }
-                else
-                {
-                    current_path = base_path + "[" + std::to_string(idx) + "]";
-                }
+                const auto current_path = build_array_path(base_path, idx);
                 add_placeholder_child(node, current_path);
             }
             ++idx;
         }
     }
-    catch (...)
+    catch (simdjson_error &e)
     {
+        sw::MsgBox::ShowWarning(
+            sw::Utils::ToWideStr(e.what()), L"JSON Viewer 4", sw::MsgBoxButton::Ok
+        );
     }
 }
 
-void Viewer::fill_tree_lazy(sw::TreeViewNode &node)
+void Viewer::fill_tree_lazy(const sw::TreeViewNode &node)
 {
     try
     {
@@ -306,10 +365,8 @@ void Viewer::fill_tree_lazy(sw::TreeViewNode &node)
             return;
         }
 
-        // 重新解析 JSON 文档
-        ondemand::document doc = m_parser.iterate(m_json);
+        document doc = m_parser.iterate(m_json);
 
-        // 使用 simdjson 的 at_path 方法导航到指定路径
         auto value_result = doc.at_path(json_path);
         if (value_result.error() != SUCCESS)
         {
@@ -328,20 +385,22 @@ void Viewer::fill_tree_lazy(sw::TreeViewNode &node)
         const auto type = value_type_result.value();
         if (type == json_type::object)
         {
-            fill_tree_with_path(value.get_object(), node, json_path);
+            fill_tree_with_path(value.get_object(), node, json_path, doc);
         }
         else if (type == json_type::array)
         {
-            fill_tree_with_path(value.get_array(), node, json_path);
+            fill_tree_with_path(value.get_array(), node, json_path, doc);
         }
         else
         {
             node.AddChild(L"[不是对象或数组]");
         }
     }
-    catch (...)
+    catch (simdjson_error &e)
     {
-        node.AddChild(L"[懒加载失败]");
+        sw::MsgBox::ShowWarning(
+            sw::Utils::ToWideStr(e.what()), L"JSON Viewer 5", sw::MsgBoxButton::Ok
+        );
     }
 }
 
@@ -363,7 +422,7 @@ std::wstring Viewer::get_value_preview(value value)
             const auto count = obj.count_fields();
             if (count.error() == SUCCESS)
             {
-                return L"{" + std::to_wstring(count.value_unsafe()) + L"}";
+                return std::format(L"{{{0}}}", count.value_unsafe());
             }
             return L"{...}";
         }
@@ -372,7 +431,7 @@ std::wstring Viewer::get_value_preview(value value)
             const auto count = obj.count_elements();
             if (count.error() == SUCCESS)
             {
-                return L"[" + std::to_wstring(count.value_unsafe()) + L"]";
+                return std::format(L"[{0}]", count.value_unsafe());
             }
             return L"[...]";
         }
@@ -396,9 +455,11 @@ std::wstring Viewer::get_value_preview(value value)
             return L"[未知类型]";
         }
     }
-    catch (...)
+    catch (std::exception &e)
     {
-        return L"[预览失败]";
+        sw::MsgBox::ShowWarning(
+            sw::Utils::ToWideStr(e.what()), L"JSON Viewer 6", sw::MsgBoxButton::Ok
+        );
     }
 }
 
@@ -423,9 +484,10 @@ bool Viewer::has_children(value value)
 
 void Viewer::add_placeholder_child(const sw::TreeViewNode &parent, const std::string &json_path)
 {
-    parent.AddChild(L"Loading...");
-    std::string *json_path_ptr = new std::string(json_path);
-    parent.SetUserData(json_path_ptr);
+    if (parent.AddChild(L"Loading..."))
+    {
+        parent.SetUserData(new std::string(json_path));
+    }
 }
 
 void Viewer::on_tree_view_item_expanded(sw::UIElement &sender, sw::TreeViewItemExpandedEventArgs &e)
@@ -444,4 +506,36 @@ void Viewer::on_tree_view_item_expanded(sw::UIElement &sender, sw::TreeViewItemE
     else
     {
     }
+}
+
+std::wstring Viewer::get_filename_from_path(const std::wstring_view path)
+{
+    try
+    {
+        return fs::path(path).filename().wstring();
+    }
+    catch (...)
+    {
+        const auto pos = path.find_last_of(L"\\/");
+        return pos != std::wstring_view::npos ? std::wstring(path.substr(pos + 1))
+                                              : std::wstring(path);
+    }
+}
+
+std::string Viewer::build_object_path(std::string_view base_path, std::string_view key)
+{
+    if (base_path.empty() || base_path == "$")
+    {
+        return std::format("$.{}", key);
+    }
+    return std::format("{}.{}", base_path, key);
+}
+
+std::string Viewer::build_array_path(std::string_view base_path, int index)
+{
+    if (base_path.empty() || base_path == "$")
+    {
+        return std::format("$[{}]", index);
+    }
+    return std::format("{}[{}]", base_path, index);
 }
