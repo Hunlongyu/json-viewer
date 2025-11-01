@@ -13,8 +13,8 @@ endif()
 include(FetchContent)
 FetchContent_Declare(
     sw
-    GIT_REPOSITORY https://github.com/Mzying2001/sw.git
-    GIT_TAG        main
+    GIT_REPOSITORY https://github.com/Mzying2001/sw
+    GIT_TAG        0.0.7
     SOURCE_SUBDIR  sw
     GIT_SHALLOW    TRUE
 )
@@ -27,6 +27,14 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(simdjson)
+
+FetchContent_Declare(
+    json
+    GIT_REPOSITORY https://github.com/nlohmann/json
+    GIT_TAG v3.12.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(json)
 
 set(Files 
     "src/main.cpp"
@@ -49,4 +57,5 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     sw
     simdjson
+    nlohmann_json::nlohmann_json
 )

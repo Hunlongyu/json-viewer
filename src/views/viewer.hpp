@@ -1,7 +1,10 @@
 #pragma once
 
 #include <SimpleWindow.h>
+#include <chrono>
 #include <simdjson.h>
+
+#include <string>
 
 using namespace simdjson;
 using namespace simdjson::ondemand;
@@ -23,7 +26,10 @@ class Viewer : public sw::Window
     parser        m_parser; // 解析器
     padded_string m_json;   // JSON字符串
 
-    std::map<sw::TreeViewNode *, std::string> m_node_paths; // 存储节点路径映射，用于懒加载
+    // 性能计时相关
+    std::chrono::high_resolution_clock::time_point m_start_time;
+    std::chrono::high_resolution_clock::time_point m_load_time;
+    std::chrono::high_resolution_clock::time_point m_parse_time;
 
     void init_ui();
 
@@ -31,23 +37,27 @@ class Viewer : public sw::Window
 
     void parse_file();
     void fill_tree_root();
-    void fill_tree(object object, sw::TreeView &tree_view);
-    void fill_tree(array array, sw::TreeView &tree_view);
-    void fill_tree(object object, sw::TreeViewNode &parent);
-    void fill_tree(array array, sw::TreeViewNode &parent);
-    void fill_tree(value value, sw::TreeViewNode &parent);
 
     void fill_tree_with_path(object object, sw::TreeView &tree_view, const std::string &base_path);
     void fill_tree_with_path(array array, sw::TreeView &tree_view, const std::string &base_path);
-    void fill_tree_with_path(object object, sw::TreeViewNode &parent, const std::string &base_path);
-    void fill_tree_with_path(array array, sw::TreeViewNode &parent, const std::string &base_path);
+    void fill_tree_with_path(
+        object object, const sw::TreeViewNode &parent, const std::string &base_path
+    );
+    void fill_tree_with_path(
+        array array, const sw::TreeViewNode &parent, const std::string &base_path
+    );
 
     void fill_tree_lazy(sw::TreeViewNode &node);
-    void fill_tree_lazy_with_path(sw::TreeViewNode &node, const std::string &path);
 
     static std::wstring get_value_preview(value value);
     bool                has_children(value value);
-    void                add_placeholder_child(sw::TreeViewNode &parent);
+    static void add_placeholder_child(const sw::TreeViewNode &parent, const std::string &json_path);
 
     void on_tree_view_item_expanded(sw::UIElement &sender, sw::TreeViewItemExpandedEventArgs &e);
+
+    // 性能计时相关方法
+    void start_timing();
+    void log_load_time();
+    void log_parse_time();
+    void log_display_time();
 };
