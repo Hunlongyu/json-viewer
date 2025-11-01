@@ -24,7 +24,7 @@ void Viewer::init_ui()
     m_treeView.HorizontalAlignment = sw::HorizontalAlignment::Stretch;
     m_treeView.VerticalAlignment   = sw::VerticalAlignment::Stretch;
     m_treeView.SetStyle(WS_BORDER, false);
-
+    m_treeView.SendMessageW(TVM_SETEXTENDEDSTYLE, TVS_EX_DOUBLEBUFFER, TVS_EX_DOUBLEBUFFER);
     m_grid.AddChild(m_treeView, sw::GridLayoutTag{0, 0});
 
     DragAcceptFiles(Handle, true);
@@ -41,9 +41,6 @@ void Viewer::drop_file(sw::UIElement &sender, sw::DropFilesEventArgs &e)
     {
         return;
     }
-
-    // 重置窗口标题
-    Text = L"JSON Viewer - 处理中...";
 
     const auto count = DragQueryFileW(e.hDrop, -1, nullptr, 0);
     if (count == 0)
@@ -77,25 +74,10 @@ void Viewer::parse_file()
         return;
     }
 
-    // 开始计时
-    start_timing();
-
     try
     {
-        // 记录加载开始时间
-        m_load_time = std::chrono::high_resolution_clock::now();
-
         m_json = padded_string::load(sw::Utils::ToMultiByteStr(m_file));
-
-        // 记录解析开始时间
-        m_parse_time = std::chrono::high_resolution_clock::now();
-
         fill_tree_root();
-
-        // 记录性能日志
-        log_load_time();
-        log_parse_time();
-        log_display_time();
     }
     catch (...)
     {
@@ -462,60 +444,4 @@ void Viewer::on_tree_view_item_expanded(sw::UIElement &sender, sw::TreeViewItemE
     else
     {
     }
-}
-
-// 性能计时相关方法实现
-void Viewer::start_timing()
-{
-    m_start_time = std::chrono::high_resolution_clock::now();
-}
-
-void Viewer::log_load_time()
-{
-    auto duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(m_load_time - m_start_time);
-    double ms = duration.count() / 1000.0;
-
-    // 在控制台输出加载时间
-    std::wstring message = L"文件加载耗时: " + std::to_wstring(ms) + L" ms";
-    OutputDebugStringW((message + L"\n").c_str());
-}
-
-void Viewer::log_parse_time()
-{
-    auto duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(m_parse_time - m_load_time);
-    double ms = duration.count() / 1000.0;
-
-    // 在控制台输出解析时间
-    std::wstring message = L"JSON解析耗时: " + std::to_wstring(ms) + L" ms";
-    OutputDebugStringW((message + L"\n").c_str());
-}
-
-void Viewer::log_display_time()
-{
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto total_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(end_time - m_start_time);
-    auto display_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(end_time - m_parse_time);
-    auto parse_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(m_parse_time - m_load_time);
-
-    double total_ms   = total_duration.count() / 1000.0;
-    double display_ms = display_duration.count() / 1000.0;
-    double parse_ms   = parse_duration.count() / 1000.0;
-
-    // 在控制台输出显示时间和总时间
-    std::wstring display_message = L"树形显示耗时: " + std::to_wstring(display_ms) + L" ms";
-    std::wstring total_message   = L"总耗时: " + std::to_wstring(total_ms) + L" ms";
-
-    OutputDebugStringW((display_message + L"\n").c_str());
-    OutputDebugStringW((total_message + L"\n").c_str());
-    OutputDebugStringW(L"========================================\n");
-
-    // 在窗口标题显示解析时间和总耗时
-    std::wstring title = L"JSON Viewer - 处理完成 (解析: " + std::to_wstring(parse_ms) +
-                         L" ms, 总计: " + std::to_wstring(total_ms) + L" ms)";
-    Text = title;
 }

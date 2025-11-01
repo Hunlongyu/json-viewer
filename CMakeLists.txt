@@ -28,14 +28,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(simdjson)
 
-FetchContent_Declare(
-    json
-    GIT_REPOSITORY https://github.com/nlohmann/json
-    GIT_TAG v3.12.0
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(json)
-
 set(Files 
     "src/main.cpp"
     "src/views/viewer.cpp"
@@ -57,5 +49,4 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     sw
     simdjson
-    nlohmann_json::nlohmann_json
 )

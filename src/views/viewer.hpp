@@ -1,10 +1,7 @@
 #pragma once
 
 #include <SimpleWindow.h>
-#include <chrono>
 #include <simdjson.h>
-
-#include <string>
 
 using namespace simdjson;
 using namespace simdjson::ondemand;
@@ -25,11 +22,6 @@ class Viewer : public sw::Window
     std::wstring  m_file;   // 文件名
     parser        m_parser; // 解析器
     padded_string m_json;   // JSON字符串
-
-    // 性能计时相关
-    std::chrono::high_resolution_clock::time_point m_start_time;
-    std::chrono::high_resolution_clock::time_point m_load_time;
-    std::chrono::high_resolution_clock::time_point m_parse_time;
 
     void init_ui();
 
@@ -54,10 +46,4 @@ class Viewer : public sw::Window
     static void add_placeholder_child(const sw::TreeViewNode &parent, const std::string &json_path);
 
     void on_tree_view_item_expanded(sw::UIElement &sender, sw::TreeViewItemExpandedEventArgs &e);
-
-    // 性能计时相关方法
-    void start_timing();
-    void log_load_time();
-    void log_parse_time();
-    void log_display_time();
 };
