@@ -15,8 +15,10 @@ class Viewer : public sw::Window
     ~Viewer() override = default;
 
   private:
-    sw::Grid     m_grid;     // 布局网格
-    sw::TreeView m_treeView; // 控件：树
+    sw::Grid       m_grid;               // 布局网格
+    sw::Menu      *m_menu{nullptr};      // 菜单
+    sw::TreeView   m_treeView;           // 控件：树
+    sw::StatusBar *m_statusBar{nullptr}; // 状态栏
 
     std::atomic_bool m_dropping = false; // 拖拽文件
     std::atomic_bool m_parsing  = false; // 解析文件
@@ -25,8 +27,13 @@ class Viewer : public sw::Window
     parser        m_parser; // 解析器
     padded_string m_json;   // JSON字符串
 
+    std::chrono::steady_clock::time_point m_startTime; // 开始时间
+
     // UI初始化
     void init_ui();
+
+    // 初始化菜单
+    void init_menu();
 
     // 拖拽文件
     void drop_file(sw::UIElement &sender, sw::DropFilesEventArgs &e);
@@ -42,7 +49,7 @@ class Viewer : public sw::Window
         object object, sw::TreeView &tree_view, const std::string &base_path, const document &doc
     );
     void fill_tree_with_path(
-        array array, sw::TreeView &tree_view, const std::string &base_path, document &doc
+        array array, sw::TreeView &tree_view, const std::string &base_path, const document &doc
     );
     void fill_tree_with_path(
         object                  object,

@@ -18,7 +18,7 @@ void Viewer::init_ui()
 
     m_grid.HorizontalAlignment = sw::HorizontalAlignment::Stretch;
     m_grid.VerticalAlignment   = sw::VerticalAlignment::Stretch;
-    m_grid.SetRows({sw::FillRemainGridRow{}});
+    m_grid.SetRows({sw::FillRemainGridRow{}, sw::AutoSizeGridRow{}});
     m_grid.SetColumns({sw::FillRemainGridColumn{}});
     AddChild(m_grid);
 
@@ -34,6 +34,69 @@ void Viewer::init_ui()
     RegisterRoutedEvent<sw::TreeViewItemExpandedEventArgs>(
         *this, &Viewer::on_tree_view_item_expanded
     );
+
+    init_menu();
+}
+
+void Viewer::init_menu()
+{
+    m_menu = new sw::Menu({
+        sw::MenuItem(
+            L"File (&F)",
+            {sw::MenuItem(
+                 L"Open (&O)",
+                 [this](sw::MenuItem &) {
+                     sw::OpenFileDialog dialog;
+                     dialog.Title = L"Select a json file.";
+                     if (dialog.ShowDialog())
+                     {
+                         m_startTime = std::chrono::steady_clock::now();
+                         m_file      = dialog.FileName.Get();
+                         parse_file();
+                     }
+                 }
+             ),
+             sw::MenuItem(
+                 L"Exit (&X)",
+                 [this](sw::MenuItem &) {
+                     PostQuitMessage(0);
+                 }
+             )}
+        ),
+        sw::MenuItem(L"Edit (&E)", {sw::MenuItem(L"Find (&Ctrl+F)", [](sw::MenuItem &) {})}),
+        sw::MenuItem(
+            L"Help (&H)",
+            {sw::MenuItem(
+                 L"Home (&H)",
+                 [](sw::MenuItem &) {
+                     ShellExecuteW(
+                         nullptr,
+                         L"open",
+                         L"https://github.com/Hunlongyu/json-viewer",
+                         nullptr,
+                         nullptr,
+                         SW_SHOWNORMAL
+                     );
+                 }
+             ),
+             sw::MenuItem(L"Author (&A)", [](sw::MenuItem &) {
+                 ShellExecuteW(
+                     nullptr,
+                     L"open",
+                     L"https://github.com/Hunlongyu",
+                     nullptr,
+                     nullptr,
+                     SW_SHOWNORMAL
+                 );
+             })}
+        ),
+    });
+    Menu   = m_menu;
+
+    m_statusBar = new sw::StatusBar();
+    m_statusBar->SetParts({200, -1});
+    m_statusBar->SetTextAt(0, L"Ready");
+    m_grid.AddChild(m_statusBar, sw::GridLayoutTag{1, 0});
 }
 
 void Viewer::drop_file(sw::UIElement &sender, sw::DropFilesEventArgs &e)
@@ -43,7 +106,9 @@ void Viewer::drop_file(sw::UIElement &sender, sw::DropFilesEventArgs &e)
         return;
     }
 
-    Text = L"JSON Viewer - loading & parsing & rendering";
+    m_startTime = std::chrono::steady_clock::now();
+    Text        = L"JSON Viewer";
+    m_statusBar->SetTextAt(0, L"Loading & Parsing & Rendering");
 
     if (m_treeView.AllItemsCount > 0)
     {
@@ -64,6 +129,7 @@ void Viewer::drop_file(sw::UIElement &sender, sw::DropFilesEventArgs &e)
     if (DragQueryFileW(e.hDrop, -1, nullptr, 0) == 0)
     {
         Text = L"JSON Viewer";
+        m_statusBar->SetTextAt(0, L"Ready");
         return;
     }
 
@@ -93,11 +159,13 @@ void Viewer::parse_file()
     }
     catch (const std::exception &e)
     {
+        Text                = L"JSON Viewer";
+        const auto end_time = std::chrono::steady_clock::now();
+        const auto duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end_time - m_startTime);
 
-        Text = L"JSON Viewer";
-        sw::MsgBox::ShowWarning(
-            sw::Utils::ToWideStr(e.what()), L"JSON Viewer", sw::MsgBoxButton::Ok
-        );
+        const std::wstring message = std::format(L" Took: {}ms", duration.count());
+        m_statusBar->SetTextAt(0, message);
     }
 
     m_parsing = false;
@@ -131,6 +199,12 @@ void Viewer::fill_tree_root()
                 m_treeView.AddItem(L"根节点不是对象或数组");
             }
         }
+
+        const auto endTime = std::chrono::steady_clock::now();
+        const auto duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(endTime - m_startTime);
+        const std::wstring timeText = std::format(L" Took: {}ms", duration.count());
+        m_statusBar->SetTextAt(0, timeText);
     }
     catch (simdjson_error &e)
     {
@@ -209,7 +283,7 @@ void Viewer::fill_tree_with_path(
 }
 
 void Viewer::fill_tree_with_path(
-    array array, sw::TreeView &tree_view, const std::string &base_path, document &doc
+    array array, sw::TreeView &tree_view, const std::string &base_path, const document &doc
 )
 {
     try
@@ -355,13 +429,11 @@ void Viewer::fill_tree_lazy(const sw::TreeViewNode &node)
         const std::string *json_path_ptr = static_cast<std::string *>(node.GetUserData());
         if (json_path_ptr == nullptr)
         {
-            node.AddChild(L"[路径信息丢失]");
             return;
         }
         const std::string json_path = *json_path_ptr;
         if (json_path.empty())
         {
-            node.AddChild(L"[路径信息丢失]");
             return;
         }
 
@@ -370,7 +442,6 @@ void Viewer::fill_tree_lazy(const sw::TreeViewNode &node)
         auto value_result = doc.at_path(json_path);
         if (value_result.error() != SUCCESS)
         {
-            node.AddChild(L"[路径无效: ]");
             return;
         }
 
@@ -378,7 +449,6 @@ void Viewer::fill_tree_lazy(const sw::TreeViewNode &node)
         auto value_type_result = value.type();
         if (value_type_result.error() != SUCCESS)
         {
-            node.AddChild(L"[无法获取类型]");
             return;
         }
 
@@ -391,15 +461,11 @@ void Viewer::fill_tree_lazy(const sw::TreeViewNode &node)
         {
             fill_tree_with_path(value.get_array(), node, json_path, doc);
         }
-        else
-        {
-            node.AddChild(L"[不是对象或数组]");
-        }
     }
     catch (simdjson_error &e)
     {
         sw::MsgBox::ShowWarning(
-            sw::Utils::ToWideStr(e.what()), L"JSON Viewer 5", sw::MsgBoxButton::Ok
+            sw::Utils::ToWideStr(e.what()), L"JSON Viewer", sw::MsgBoxButton::Ok
         );
     }
 }
@@ -458,9 +524,10 @@ std::wstring Viewer::get_value_preview(value value)
     catch (std::exception &e)
     {
         sw::MsgBox::ShowWarning(
-            sw::Utils::ToWideStr(e.what()), L"JSON Viewer 6", sw::MsgBoxButton::Ok
+            sw::Utils::ToWideStr(e.what()), L"JSON Viewer", sw::MsgBoxButton::Ok
         );
     }
+    return L"[未知类型]";
 }
 
 bool Viewer::has_children(value value)
