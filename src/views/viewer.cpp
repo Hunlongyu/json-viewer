@@ -244,7 +244,7 @@ void Viewer::fill_tree_with_path(
                 continue;
             }
 
-            std::wstring value_preview = L": " + get_value_preview(value);
+            std::wstring value_preview = get_value_preview(value);
             const auto   text          = std::format(L"{0}: {1}", key, value_preview);
             const auto   node          = tree_view.AddItem(text);
 

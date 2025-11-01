@@ -23,7 +23,7 @@ FetchContent_MakeAvailable(sw)
 FetchContent_Declare(
     simdjson
     GIT_REPOSITORY https://github.com/simdjson/simdjson
-    GIT_TAG v4.1.0
+    GIT_TAG        v4.1.0
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(simdjson)
@@ -31,6 +31,7 @@ FetchContent_MakeAvailable(simdjson)
 set(Files 
     "src/main.cpp"
     "src/views/viewer.cpp"
+    "assets/resource.rc"
 )
 
 enable_language(RC)
