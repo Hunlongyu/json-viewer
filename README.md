@@ -2,7 +2,7 @@
 
 JSON Viewer 是一款 Windows x64 上的只读 JSON / JSONL 查看器。可以按树形结构浏览大型文件，在折叠的节点中搜索键或值，再复制或导出需要的部分。
 
-![JSON Viewer 在 30MB.json 中搜索 PlatformID，自动展开到第 1 个命中，共 11 处](docs/json-viewer-search.png)
+![JSON Viewer 在 30MB.json 中搜索 PlatformID，自动展开到第 1 个命中，共 11 处](docs/platformid-search.png)
 
 [![下载次数](https://img.shields.io/github/downloads/Hunlongyu/json-viewer/total?style=flat-square)](https://github.com/Hunlongyu/json-viewer/releases)
 
