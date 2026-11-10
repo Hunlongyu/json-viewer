@@ -1,3 +1,4 @@
+#pragma code_page(65001)
 #include <windows.h>
 #include "commands.h"
 #include "version.h"
@@ -89,6 +90,7 @@ BEGIN
   BEGIN
     MENUITEM "Hide Status Bar", CMD_STATUS
     MENUITEM "Show Node Path", CMD_NODE_PATH
+    MENUITEM "Change Font...", CMD_CHANGE_FONT
     MENUITEM SEPARATOR
     MENUITEM "Refresh Data\tF5", CMD_REFRESH
     MENUITEM SEPARATOR

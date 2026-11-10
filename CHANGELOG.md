@@ -1,5 +1,11 @@
 # 更新日志
 
+## 0.2.0
+
+- 树视图默认使用 Segoe UI，字号从 12 调整为 13 个逻辑像素。
+- 通过 `View → Change Font...` 打开 Windows 原生字体对话框，可调整字体、字形和字号。树行高度和搜索高亮会随所选字体调整。
+- 字体设置保存到 `%LOCALAPPDATA%\JSON Viewer\settings.ini`，下次启动时自动恢复。
+
 ## 0.1.0
 
 - 首个 Windows x64 便携版。通过文件对话框、拖放、命令行或剪贴板打开 JSON；普通 JSON 支持任意文件后缀，JSON Lines 使用 `.jsonl` 或 `.ndjson`。

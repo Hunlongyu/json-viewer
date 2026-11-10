@@ -1,6 +1,7 @@
 #define COBJMACROS
 #include "tree_ui.h"
 #include "commands.h"
+#include "fonts.h"
 #include "recent.h"
 #include "update.h"
 #include <initguid.h>
@@ -30,6 +31,7 @@ typedef struct {
     HWND hwnd;
     IAccPropServices *access;
     Document *chinese;
+    TreeFonts fonts;
     SearchMode mode;
     bool match_case, regex;
     POINT context;
@@ -463,6 +465,13 @@ static void command(Application *a, unsigned cmd) {
             open_path(a, a->recent.path[cmd - CMD_RECENT]);
         return;
     }
+    if (cmd == CMD_CHANGE_FONT) {
+        if (fonts_choose(&a->fonts, a->hwnd)) {
+            a->ensure_visible = true;
+            redraw(a);
+        }
+        return;
+    }
     if (cmd >= CMD_SCOPE_RAW && cmd <= CMD_SCOPE_BOTH) {
         set_scope(a, (SearchMode)(cmd - CMD_SCOPE_RAW));
         redraw(a);
@@ -688,7 +697,8 @@ static void frame(Application *a) {
             cui_text(ui, v->status, .width = CUI_FILL, .nowrap = true,
                      .color = CUI_COLOR_TEXT_SECONDARY);
         if (v->doc)
-            preview_tree(ui, v, &a->tree_click, cui_app_size(a->app).x, &a->ensure_visible,
+            preview_tree(ui, v, a->fonts.font, a->fonts.size, &a->tree_click,
+                         cui_app_size(a->app).x, &a->ensure_visible,
                          &a->search_focused, &a->context);
         else {
             cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .justify = CUI_JUSTIFY_CENTER) {
@@ -740,30 +750,41 @@ static void live_frame(cui_ctx *ui, void *user) {
     (void)ui;
     frame((Application *)user);
 }
+/* CUI borrows the mapped font bytes until the application is destroyed. */
+static cui_font load_windows_font(cui_ctx *ui, const wchar_t *dir, const wchar_t *name,
+                                  Document **mapping) {
+    wchar_t path[MAX_PATH + 40];
+    swprintf(path, _countof(path), L"%ls\\Fonts\\%ls", dir, name);
+    char error[100];
+    Document *doc = doc_open(path, NULL, error, sizeof error);
+    if (!doc)
+        return -1;
+    cui_font f = cui_font_load_memory(ui, doc->data, doc->size, false);
+    if (f >= 0)
+        *mapping = doc;
+    else
+        doc_release(doc);
+    return f;
+}
 static void system_font(Application *a) {
+    cui_ctx *ui = cui_app_ui(a->app);
+    cui_font fallback = -1;
     wchar_t dir[MAX_PATH];
     UINT n = GetWindowsDirectoryW(dir, MAX_PATH);
-    if (!n || n >= MAX_PATH)
-        return;
-    const wchar_t *names[] = {L"msyh.ttc", L"msjh.ttc", L"simsun.ttc", L"msgothic.ttc",
-                              L"malgun.ttf"};
-    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
-        wchar_t path[MAX_PATH + 40];
-        swprintf(path, sizeof path / sizeof *path, L"%ls\\Fonts\\%ls", dir, names[i]);
-        char error[100];
-        Document *font = doc_open(path, NULL, error, sizeof error);
-        if (!font)
-            continue;
-        cui_ctx *ui = cui_app_ui(a->app);
-        cui_font f = cui_font_load_memory(ui, font->data, font->size, false);
-        if (f >= 0) {
-            for (int role = CUI_FONT_BODY; role <= CUI_FONT_MONO; role++)
+    if (n && n < MAX_PATH) {
+        const wchar_t *names[] = {L"msyh.ttc", L"msjh.ttc", L"simsun.ttc", L"msgothic.ttc",
+                                  L"malgun.ttf"};
+        for (size_t i = 0; i < _countof(names); ++i) {
+            cui_font f = load_windows_font(ui, dir, names[i], &a->chinese);
+            if (f < 0)
+                continue;
+            for (int role = CUI_FONT_BODY; role <= CUI_FONT_MONO; ++role)
                 cui_font_add_fallback(ui, role, f);
-            a->chinese = font;
-            return;
+            fallback = f;
+            break;
         }
-        doc_release(font);
     }
+    fonts_init(&a->fonts, ui, fallback);
 }
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev, PWSTR cmd, int show) {
     (void)prev;
@@ -859,6 +880,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev, PWSTR cmd, int show) {
     if (large_icon)
         DestroyIcon(large_icon);
     doc_release(a.chinese);
+    fonts_dispose(&a.fonts);
     if (a.access)
         IAccPropServices_Release(a.access);
     if (SUCCEEDED(com))

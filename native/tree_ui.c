@@ -3,8 +3,11 @@
 #include <stdio.h>
 #include <string.h>
 
-enum { ROW_HEIGHT = 21, INDENT = 16, FONT_SIZE = 12, LEVELS = 63 };
+enum { INDENT = 16, LEVELS = 63 };
 typedef struct {
+    cui_font font;
+    int size;
+    float text_height;
     char label[300], value[400];
     unsigned char label_marks[300], value_marks[400];
     bool search_selection;
@@ -16,7 +19,7 @@ typedef struct {
 } TreeLine;
 /* A match beyond the displayed prefix gets an excerpt starting at its decoded
    scalar. Search offsets already point to scalar boundaries in keys/values mode. */
-static void mark_string(cui_ctx *ui, float width, View *v, Reader *reader, size_t start, size_t end,
+static void mark_string(cui_ctx *ui, cui_font font, int size, float width, View *v, Reader *reader, size_t start, size_t end,
                         size_t focus, char *text, size_t cap, unsigned char *marks) {
     size_t source[400], mapped;
     jstring_preview(reader, start, end, text, cap, source, &mapped);
@@ -27,7 +30,7 @@ static void mark_string(cui_ctx *ui, float width, View *v, Reader *reader, size_
             ++prefix;
         clipped = prefix == mapped
                       ? reader->bytes[source[mapped]] != '"'
-                      : cui_measure_text(ui, CUI_FONT_BODY, FONT_SIZE, text, (int)prefix).width >
+                      : cui_measure_text(ui, font, size, text, (int)prefix).width >
                             width - 30;
     }
     if (clipped) {
@@ -40,7 +43,7 @@ static void mark_string(cui_ctx *ui, float width, View *v, Reader *reader, size_
 static float joint(int level) {
     return 6.5f + INDENT * level;
 }
-static float paint_text(cui_ctx *ui, cui_vec2 pos, cui_color color, char *text,
+static float paint_text(cui_ctx *ui, cui_font font, int size, cui_vec2 pos, float height, cui_color color, char *text,
                         const unsigned char *marks, bool dark) {
     size_t length = strlen(text);
     cui_color highlight = dark ? CUI_RGB(0xe6cf83) : CUI_RGB(0xffed9e);
@@ -52,12 +55,12 @@ static float paint_text(cui_ctx *ui, cui_vec2 pos, cui_color color, char *text,
         size_t start = i++;
         while (i < length && marks[i])
             ++i;
-        float left = cui_measure_text(ui, CUI_FONT_BODY, FONT_SIZE, text, (int)start).width;
-        float right = cui_measure_text(ui, CUI_FONT_BODY, FONT_SIZE, text, (int)i).width;
-        cui_draw_rect(ui, (cui_rect){pos.x + left, pos.y, right - left, 15}, CUI_CORNERS(0),
+        float left = cui_measure_text(ui, font, size, text, (int)start).width;
+        float right = cui_measure_text(ui, font, size, text, (int)i).width;
+        cui_draw_rect(ui, (cui_rect){pos.x + left, pos.y, right - left, height}, CUI_CORNERS(0),
                       highlight);
     }
-    cui_draw_text(ui, CUI_FONT_BODY, FONT_SIZE, pos, color, text, -1);
+    cui_draw_text(ui, font, size, pos, color, text, -1);
     if (dark)
         for (size_t i = 0; i < length;) {
             if (!marks[i]) {
@@ -67,11 +70,11 @@ static float paint_text(cui_ctx *ui, cui_vec2 pos, cui_color color, char *text,
             size_t start = i++;
             while (i < length && marks[i])
                 ++i;
-            float left = cui_measure_text(ui, CUI_FONT_BODY, FONT_SIZE, text, (int)start).width;
-            cui_draw_text(ui, CUI_FONT_BODY, FONT_SIZE, (cui_vec2){pos.x + left, pos.y},
+            float left = cui_measure_text(ui, font, size, text, (int)start).width;
+            cui_draw_text(ui, font, size, (cui_vec2){pos.x + left, pos.y},
                           CUI_RGB(0x302b1b), text + start, (int)(i - start));
         }
-    return cui_measure_text(ui, CUI_FONT_BODY, FONT_SIZE, text, -1).width;
+    return cui_measure_text(ui, font, size, text, -1).width;
 }
 static void paint_line(cui_ctx *ui, cui_rect r, void *data) {
     TreeLine *line = data;
@@ -88,7 +91,7 @@ static void paint_line(cui_ctx *ui, cui_rect r, void *data) {
     cui_push_clip(ui, r);
     cui_draw_rect(ui, r, CUI_CORNERS(0), bg);
     float scale = ui->scale, pixel = 1.f / scale;
-    float mid = floorf((r.y + ROW_HEIGHT / 2.f) * scale) * pixel;
+    float mid = floorf((r.y + r.h / 2.f) * scale) * pixel;
     float x = floorf((r.x + joint(line->depth)) * scale) * pixel;
     float top = roundf(r.y * scale) * pixel, bottom_edge = roundf((r.y + r.h) * scale) * pixel;
     for (int d = line->flat_root ? 0 : 1; d <= line->depth; d++) {
@@ -122,13 +125,15 @@ static void paint_line(cui_ctx *ui, cui_rect r, void *data) {
             cui_draw_rect(ui, (cui_rect){x, mid - arm, pixel, 2 * arm + pixel}, CUI_CORNERS(0),
                           ink);
     }
-    cui_vec2 pos = {x + 11, r.y + 3};
-    pos.x += paint_text(ui, pos, key, line->label, line->label_marks, dark);
+    cui_font font = line->font;
+    float height = line->text_height;
+    cui_vec2 pos = {x + 11, r.y + (r.h - height) * 0.5f};
+    pos.x += paint_text(ui, font, line->size, pos, height, key, line->label, line->label_marks, dark);
     if (pos.x < r.x + r.w)
-        paint_text(ui, pos, value, line->value, line->value_marks, dark);
+        paint_text(ui, font, line->size, pos, height, value, line->value, line->value_marks, dark);
     cui_pop_clip(ui);
 }
-void preview_tree(cui_ctx *ui, View *v, TreeClick *click, float width, bool *ensure_visible,
+void preview_tree(cui_ctx *ui, View *v, cui_font font, int size, TreeClick *click, float width, bool *ensure_visible,
                   bool *search_focus, POINT *context) {
     int first = 0, last = 0, clicked = -1;
     bool toggle = false;
@@ -148,11 +153,14 @@ void preview_tree(cui_ctx *ui, View *v, TreeClick *click, float width, bool *ens
         parent = parent->parent;
     }
     int cap = min(LEVELS, max(1, (int)(width - 90) / INDENT));
-    cui_virtual_list_begin(ui, "document", v->rows, ROW_HEIGHT, CUI_FILL, &first, &last);
+    cui_text_metrics metrics = cui_measure_text(ui, font, size, "", 0);
+    float text_height = metrics.ascent - metrics.descent;
+    float row_height = max(21.f, ceilf(text_height) + 5.f);
+    cui_virtual_list_begin(ui, "document", v->rows, row_height, CUI_FILL, &first, &last);
     for (int i = first; i < last; i++) {
         Row row = view_row(v, i);
         char label[256], value[320];
-        TreeLine line = {0};
+        TreeLine line = {.font = font, .size = size, .text_height = text_height};
         view_text(v, row, label, sizeof label, value, sizeof value);
         snprintf(line.label, sizeof line.label, "%s%s", label, row.kind == NEXT_PAGE ? "" : " : ");
         line.open = view_expanded(v, row);
@@ -171,7 +179,7 @@ void preview_tree(cui_ctx *ui, View *v, TreeClick *click, float width, bool *ens
                                : J_NONE;
             float room = width - joint(min(row.depth, cap)) - 24;
             if (row.node.key != J_NONE && row.record == J_NONE) {
-                mark_string(ui, room, v, &reader, row.node.key, row.node.key_end,
+                mark_string(ui, font, size, room, v, &reader, row.node.key, row.node.key_end,
                             focus < row.node.key_end ? focus : J_NONE, label, sizeof label,
                             line.label_marks);
                 snprintf(line.label, sizeof line.label, "%s : ", label);
@@ -179,16 +187,16 @@ void preview_tree(cui_ctx *ui, View *v, TreeClick *click, float width, bool *ens
             if (row.node.kind == '"') {
                 if (focus != J_NONE) {
                     float label_width =
-                        cui_measure_text(ui, CUI_FONT_BODY, FONT_SIZE, line.label, -1).width;
+                        cui_measure_text(ui, font, size, line.label, -1).width;
                     if (focus > row.node.start && label_width > room - 45) {
                         strcpy(line.label, "… : ");
                         memset(line.label_marks, 0, sizeof line.label_marks);
                         label_width =
-                            cui_measure_text(ui, CUI_FONT_BODY, FONT_SIZE, line.label, -1).width;
+                            cui_measure_text(ui, font, size, line.label, -1).width;
                     }
                     room -= label_width;
                 }
-                mark_string(ui, room, v, &reader, row.node.start, row.node.bound,
+                mark_string(ui, font, size, room, v, &reader, row.node.start, row.node.bound,
                             focus > row.node.start ? focus : J_NONE, value, sizeof value,
                             line.value_marks + 1);
                 snprintf(line.value, sizeof line.value, "\"%s\"", value);
@@ -215,7 +223,7 @@ void preview_tree(cui_ctx *ui, View *v, TreeClick *click, float width, bool *ens
             }
         cui_push_id_int(ui, i);
         cui_canvas_result hit =
-            cui_canvas(ui, "node", CUI_FILL, CUI_PX(ROW_HEIGHT), paint_line, &line, sizeof line);
+            cui_canvas(ui, "node", CUI_FILL, CUI_PX(row_height), paint_line, &line, sizeof line);
         if (hit.clicked) {
             clicked = i;
             ULONGLONG now = GetTickCount64();
@@ -262,7 +270,7 @@ void preview_tree(cui_ctx *ui, View *v, TreeClick *click, float width, bool *ens
     if (*ensure_visible && v->rows) {
         if (v->cursor < first + 2 || v->cursor >= last - 2) {
             int top = v->cursor - max(0, (last - first) / 2);
-            cui_scroll_to(ui, "document", (float)max(0, top) * ROW_HEIGHT);
+            cui_scroll_to(ui, "document", (float)max(0, top) * row_height);
             cui_request_redraw(ui);
         }
         *ensure_visible = false;

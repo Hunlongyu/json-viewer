@@ -9,5 +9,5 @@ typedef struct {
     POINT point;
     bool glyph;
 } TreeClick;
-void preview_tree(cui_ctx *ui, View *view, TreeClick *click, float width, bool *scroll,
+void preview_tree(cui_ctx *ui, View *view, cui_font font, int size, TreeClick *click, float width, bool *scroll,
                   bool *search_focus, POINT *context);

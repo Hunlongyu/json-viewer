@@ -8,7 +8,7 @@ JSON Viewer 是一款 Windows x64 上的只读 JSON / JSONL 查看器。可以�
 
 ## 快速开始
 
-1. 下载并解压 [Windows x64 便携包](https://github.com/Hunlongyu/json-viewer/releases/download/v0.1.0/json-viewer-windows-x64.zip)，双击 `json-viewer.exe` 即可启动。若从源码构建，可在 `dist/windows-x64/` 找到同名程序。
+1. 下载并解压 [Windows x64 便携包](https://github.com/Hunlongyu/json-viewer/releases/download/v0.2.0/json-viewer-windows-x64.zip)，双击 `json-viewer.exe` 即可启动。若从源码构建，可在 `dist/windows-x64/` 找到同名程序。
 2. 将 `.json` 或 `.jsonl` 文件拖入窗口，也可以按 `Ctrl+O` 选择文件。要查看剪贴板中的 JSON，选择 `File → Open Clipboard...`。
 3. 单击节点左侧的加号展开对象或数组。打开 JSONL 时，展开根节点即可按记录浏览。按 `Ctrl+C` 可复制选中项的值。
 
@@ -19,6 +19,10 @@ JSON Viewer 是一款 Windows x64 上的只读 JSON / JSONL 查看器。可以�
 ```powershell
 .\json-viewer.exe ".\example.json"
 ```
+
+树文字默认使用 Segoe UI，字号为 13 个逻辑像素。选择 `View → Change Font...` 可直接打开 Windows 字体对话框，选择字体、字形和字号。对话框以磅为单位，可选 6 至 36 磅。
+
+字体、字形和字号保存在 `%LOCALAPPDATA%\JSON Viewer\settings.ini`。可在 `[Tree]` 下编辑 `Family` 和以逻辑像素计的 `Size`，重新打开窗口后生效。首次启动时会沿用旧版已保存的字体选择。
 
 ## 查找、复制与导出
 
