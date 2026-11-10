@@ -156,6 +156,8 @@ void preview_tree(cui_ctx *ui, View *v, cui_font font, int size, TreeClick *clic
     cui_text_metrics metrics = cui_measure_text(ui, font, size, "", 0);
     float text_height = metrics.ascent - metrics.descent;
     float row_height = max(21.f, ceilf(text_height) + 5.f);
+    /* The virtual list retains its viewport and animated scroll offset by ID. */
+    cui_push_id_int(ui, (int)v->generation);
     cui_virtual_list_begin(ui, "document", v->rows, row_height, CUI_FILL, &first, &last);
     for (int i = first; i < last; i++) {
         Row row = view_row(v, i);
@@ -275,4 +277,5 @@ void preview_tree(cui_ctx *ui, View *v, cui_font font, int size, TreeClick *clic
         }
         *ensure_visible = false;
     }
+    cui_pop_id(ui);
 }

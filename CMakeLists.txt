@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(json_viewer VERSION 0.2.0 LANGUAGES C RC)
+project(json_viewer VERSION 0.2.1 LANGUAGES C RC)
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Choose a 64-bit Windows toolchain.")
 endif()
