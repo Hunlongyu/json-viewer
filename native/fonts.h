@@ -9,7 +9,7 @@ typedef struct {
     int size, weight;
     bool italic;
     wchar_t family[LF_FACESIZE];
-    wchar_t ini[MAX_PATH];
+    wchar_t portable_ini[MAX_PATH], user_ini[MAX_PATH];
     FontEntry *loaded;
 } TreeFonts;
 
