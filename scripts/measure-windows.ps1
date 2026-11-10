@@ -1,9 +1,8 @@
 #Requires -Version 7.0
 param(
-    [ValidateSet('Dadroit','Win32','GPUI','GPUI Kit')][string]$App = 'Win32',
+    [ValidateSet('Dadroit')][string]$App = 'Dadroit',
     [string[]]$Samples = @('23MB.json','30MB.json'),
     [ValidateRange(1,30)][int]$Runs = 5,
-    [string]$Viewer = 'target/release/json-preview.exe',
     [switch]$Search,
     [switch]$ColdData,
     [switch]$ColdImage,
@@ -14,7 +13,6 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 if (($ColdData -or $ColdImage) -and !('ColdSample' -as [type])){Add-Type -Path (Join-Path $PSScriptRoot 'ColdSample.cs')}
-if($ColdImage -and !$PrivateDesktop -and $App -ne 'Dadroit'){throw 'Use a private trial desktop for cold executable images'}
 if($Explorer -and ($ColdImage -or $PrivateDesktop)){throw 'Explorer runs in the interactive desktop'}
 if($Explorer){
     $shell=New-Object -ComObject Shell.Application
@@ -22,7 +20,7 @@ if($Explorer){
     if(!$folder){throw 'An Explorer folder view is required for the Explorer handoff measurement'}
     $explorerApp=$folder.Document.Application
 }
-if (($PrivateDesktop -or $App -eq 'Dadroit') -and !('BenchmarkDesktop' -as [type])) {
+if (!('BenchmarkDesktop' -as [type])) {
     Add-Type -Path (Join-Path $PSScriptRoot 'BenchmarkDesktop.cs')
 }
 if (!('PreviewWindowInput' -as [type])) {
@@ -59,16 +57,6 @@ public sealed class WindowProbe : IDisposable {
     public void Dispose(){stop.Set();worker.Join();stop.Dispose();}
 }
 public static class PreviewWindowInput {
-    [StructLayout(LayoutKind.Sequential)] struct Point {public int X,Y;}
-    [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr hwnd,ref Point point);
-    public static void PressRow(IntPtr hwnd,int x,int y){
-        var p=new Point{X=x,Y=y};
-        if(!ScreenToClient(hwnd,ref p))throw new System.ComponentModel.Win32Exception();
-        var point=(IntPtr)((p.Y<<16)|(p.X&0xffff));
-        PostMessage(hwnd,0x200,IntPtr.Zero,point);
-        PostMessage(hwnd,0x201,(IntPtr)1,point);
-        PostMessage(hwnd,0x202,IntPtr.Zero,point);
-    }
     delegate bool Visit(IntPtr h,IntPtr data);
     [DllImport("user32.dll")] static extern bool EnumWindows(Visit cb,IntPtr data);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint id);
@@ -105,7 +93,7 @@ public static class PreviewWindowInput {
 '@
 }
 $root = Split-Path $PSScriptRoot -Parent
-$exe = (Resolve-Path (Join-Path $root $(if ($App -ne 'Dadroit') { $Viewer } else { 'bin/DadroitViewer.exe' }))).Path
+$exe = (Resolve-Path (Join-Path $root 'bin/DadroitViewer.exe')).Path
 $binaryHash=(Get-FileHash -LiteralPath $exe).Hash
 $desktop = [System.Windows.Automation.AutomationElement]::RootElement
 $any = [System.Windows.Automation.Condition]::TrueCondition
@@ -119,16 +107,6 @@ function Get-AppWindows([int[]]$OnlyPid) {
         $desktop.FindAll('Children',$pidFilter)
     }
 }
-function Wait-Element ($window, [scriptblock]$matches) {
-    $limit = [Diagnostics.Stopwatch]::StartNew()
-    do {
-        foreach ($element in $window.FindAll('Descendants',$any)) {
-            if (& $matches $element.Current.Name) { return $element }
-        }
-        Start-Sleep -Milliseconds 5
-    } while ($limit.Elapsed.TotalSeconds -lt 20)
-    throw "Window did not reach the expected UI state: $($window.Current.Name)"
-}
 function Wait-Part($bar,[int]$part,[scriptblock]$accept) {
     $limit=[Diagnostics.Stopwatch]::StartNew()
     do {
@@ -141,63 +119,8 @@ function Wait-Part($bar,[int]$part,[scriptblock]$accept) {
 function Send-Key([IntPtr]$target,[int]$vk) {
     $down=([long][PreviewWindowInput]::MapVirtualKey($vk,0) -shl 16) -bor 1
     $up=$down -bor [long]0xc0000000u
-    if($App -eq 'Dadroit'){
-        $null=[PreviewWindowInput]::Dispatch($target,0x100,$vk,$down)
-        $null=[PreviewWindowInput]::Dispatch($target,0x101,$vk,$up)
-    }else{
-        $null=[PreviewWindowInput]::PostMessage($target,0x100,$vk,$down)
-        $null=[PreviewWindowInput]::PostMessage($target,0x101,$vk,$up)
-    }
-}
-function Set-Query($edit,$value,[IntPtr]$hwnd,[string]$query){
-    if($App -eq 'Win32'){$value.SetValue($query);return}
-    # GPUI Fast 0.1.9 exposes an edit value to UIA but rejects its SetValue action.
-    # Exercise the actual field and its ordinary text-input path instead.
-    $w=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
-    $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Edit)
-    $edit=$w.FindFirst('Descendants',$condition)
-    $edit.SetFocus()
-    $wait=[Diagnostics.Stopwatch]::StartNew()
-    do{
-        $edit=$w.FindFirst('Descendants',$condition)
-        if($edit.Current.HasKeyboardFocus){break}
-        Start-Sleep -Milliseconds 10
-    }while($wait.Elapsed.TotalSeconds -lt 2)
-    # The input handler is installed during the next GPUI frame after focus.
-    Start-Sleep -Milliseconds 60
-    $old=$edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
-    Send-Key $hwnd 0x23
-    for($i=0;$i -lt $old.Length;$i++){Send-Key $hwnd 8}
-    if($old){Start-Sleep -Milliseconds 120}
-    foreach($ch in $query.ToCharArray()){$null=[PreviewWindowInput]::Dispatch($hwnd,0x102,[int]$ch,1)}
-    $limit=[Diagnostics.Stopwatch]::StartNew()
-    do{
-        $field=$w.FindFirst('Descendants',$condition)
-        $observed=$field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
-        if($observed -eq $query){return}
-        Start-Sleep -Milliseconds 10
-    }while($limit.Elapsed.TotalSeconds -lt 3)
-    throw "Text entry mismatch: expected '$query', observed '$observed'"
-}
-function Measure-Scroll($window) {
-    $first=Wait-Element $window {param($name)$name -match '▸\s+#1\s+行'}
-    $rect=$first.Current.BoundingRectangle
-    $x=[int]($rect.Left+[math]::Min(120,$rect.Width/2))
-    $y=[int]($rect.Top+$rect.Height/2)
-    $point=($y -shl 16) -bor ($x -band 65535)
-    $hwnd=$window.Current.NativeWindowHandle
-    $action=[Diagnostics.Stopwatch]::StartNew()
-    $probe=[WindowProbe]::new($hwnd,$window.Current.ProcessId)
-    try {
-        for($i=0;$i -lt 32;$i++){
-            $null=[PreviewWindowInput]::PostMessage($hwnd,0x20a,[IntPtr](-120 -shl 16),$point)
-            Start-Sleep -Milliseconds 8
-        }
-        $item=Wait-Element $window {param($name)$name -match '#(\d+)\s+行' -and [int]$Matches[1] -gt 45}
-        $scrollMs=$action.Elapsed.TotalMilliseconds
-    } finally { $probe.Dispose() }
-    return [ordered]@{wheel_events=32;elapsed_ms=$scrollMs;observed_row=$item.Current.Name;
-        max_roundtrip_ms=$probe.MaxRoundTripMs;probe_samples=$probe.Samples;timeouts=$probe.Timeouts}
+    $null=[PreviewWindowInput]::Dispatch($target,0x100,$vk,$down)
+    $null=[PreviewWindowInput]::Dispatch($target,0x101,$vk,$up)
 }
 function Measure-DadroitTree($window,$sample,$startupClock) {
     $lines=$sample -like '*.jsonl'
@@ -291,14 +214,8 @@ foreach ($sample in $Samples) {
             }
             $trialExe=Join-Path $imageDir.FullName ([IO.Path]::GetFileName($exe))
         }
-        $hostPids=if($Explorer -and $App -eq 'Dadroit'){@(Get-Process -Name DadroitViewer -ErrorAction SilentlyContinue|Where-Object Path -eq $exe|ForEach-Object Id)}
-        $before=if($Explorer -or (!$PrivateDesktop -and $App -ne 'Dadroit')){@(Get-AppWindows $hostPids | ForEach-Object {$_.Current.NativeWindowHandle})}
-        $info = [Diagnostics.ProcessStartInfo]::new($trialExe)
-        $info.UseShellExecute = $false
-        if (!$empty) {
-            if($App -eq 'Dadroit') { $info.Arguments = '"' + $inputPath + '"' }
-            else { $info.ArgumentList.Add($inputPath) }
-        }
+        $hostPids=if($Explorer){@(Get-Process -Name DadroitViewer -ErrorAction SilentlyContinue|Where-Object Path -eq $exe|ForEach-Object Id)}
+        $before=if($Explorer){@(Get-AppWindows $hostPids | ForEach-Object {$_.Current.NativeWindowHandle})}
         $window = $null
         $probe = $null
         $isolated = $null
@@ -306,17 +223,17 @@ foreach ($sample in $Samples) {
         if($Explorer){
             $process=$null
             $null=$explorerApp.ShellExecute($exe,('"'+$inputPath+'"'),(Split-Path $exe),'open',1)
-        }elseif($PrivateDesktop -or $App -eq 'Dadroit'){
+        }else{
             $isolated=[BenchmarkDesktop]::new($trialExe,$inputPath)
             $sw=$isolated.Clock
             $process=$isolated.Process
-        }else{$process = [Diagnostics.Process]::Start($info)}
-        Write-Verbose "Trial $run, executable $exe, sample $inputPath, arguments $($info.Arguments), PID $($process.Id)"
+        }
+        Write-Verbose "Trial $run, executable $exe, sample $inputPath, PID $($process.Id)"
         try {
             if($isolated){
-                $hint=if($App -ne 'Dadroit'){'JSON 预览'}elseif($empty){'Dadroit JSON Viewer'}else{$titleName}
+                $hint=if($empty){'Dadroit JSON Viewer'}else{$titleName}
                 $window=[System.Windows.Automation.AutomationElement]::FromHandle($isolated.WaitWindow($hint))
-            }elseif($Explorer -and $App -eq 'Dadroit' -and $hostPids){
+            }elseif($hostPids){
                 do {
                     $owned=[PreviewWindowInput]::NewHostWindow(@($hostPids)[0],[int[]]@($before),"$titleName - Dadroit")
                     if($owned -ne [IntPtr]::Zero){$window=[System.Windows.Automation.AutomationElement]::FromHandle($owned);break}
@@ -325,9 +242,7 @@ foreach ($sample in $Samples) {
             }else{do {
                 $fresh = @(Get-AppWindows $hostPids | Where-Object {
                     $_.Current.NativeWindowHandle -notin $before -and
-                    $(if($Explorer -and $App -ne 'Dadroit'){$_.Current.Name -eq 'JSON 预览'}
-                      elseif($App -ne 'Dadroit') {$_.Current.ProcessId -eq $process.Id}
-                      elseif($empty) {$_.Current.Name -like '*Dadroit*'}
+                    $(if($empty) {$_.Current.Name -like '*Dadroit*'}
                       else {$_.Current.Name.StartsWith("$titleName - Dadroit")})
                 })
                 if ($fresh.Count -eq 1) {$window=$fresh[0];break}
@@ -351,12 +266,10 @@ foreach ($sample in $Samples) {
             $scroll=$null
             $searchData = $null
             if ($empty) {
-                if ($App -eq 'Dadroit') {
-                    if(![PreviewWindowInput]::GetMenu($window.Current.NativeWindowHandle)){throw 'File menu unavailable'}
-                    $fields=@($window.FindAll('Descendants',$any) | Where-Object {$_.Current.ClassName -eq 'Edit'})
-                    if(!$fields.Count){throw 'Empty viewer has not created its controls'}
-                }else{$null=Wait-Element $window {param($name)$name -eq '打开文件'}}
-            } elseif ($App -eq 'Dadroit') {
+                if(![PreviewWindowInput]::GetMenu($window.Current.NativeWindowHandle)){throw 'File menu unavailable'}
+                $fields=@($window.FindAll('Descendants',$any) | Where-Object {$_.Current.ClassName -eq 'Edit'})
+                if(!$fields.Count){throw 'Empty viewer has not created its controls'}
+            }else{
                 $limit=[Diagnostics.Stopwatch]::StartNew()
                 do {
                     foreach($child in $window.FindAll('Descendants',$any)){
@@ -371,92 +284,14 @@ foreach ($sample in $Samples) {
                     if(!$engine){Start-Sleep -Milliseconds 5}
                 } while (!$engine -and $limit.Elapsed.TotalSeconds -lt 20)
                 if(!$engine){throw "Missing Dadroit load readout in $sample"}
-            } else {
-                $null=Wait-Element $window {param($name) $name -eq '就绪'}
             }
             $readyMs=$sw.Elapsed.TotalMilliseconds
             $snapshot=Get-Process -Id $window.Current.ProcessId
             $readyPrivate=$snapshot.PrivateMemorySize64
             $readyWorking=$snapshot.WorkingSet64
-            if($App -eq 'Dadroit' -and !$empty){
+            if(!$empty){
                 $searchData=Measure-DadroitTree $window $sample $sw
                 $firstSelectedMs=$searchData.first_field_ms
-            }elseif ($Search) {
-                if ($sample -notin @('sdk-events_s.jsonl','sdk-events_x.jsonl','23MB.json','30MB.json')){throw "Missing search setup for $sample"}
-                $jsonLines=$sample -like '*.jsonl'
-                $editCondition=[System.Windows.Automation.PropertyCondition]::new(
-                    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-                    [System.Windows.Automation.ControlType]::Edit)
-                $edit=$window.FindFirst('Descendants',$editCondition)
-                $inputValue=$edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-                $hwnd=[IntPtr]$window.Current.NativeWindowHandle
-                $searchData=[ordered]@{}
-                foreach($case in @('first','next','tail','none')){
-                    $q=switch ($case) {
-                        'first' {if($jsonLines){'local_index'}else{'PlatformID'}}
-                        'tail' {if(!$jsonLines){'WSManStackVersion'}elseif($sample -eq 'sdk-events_x.jsonl'){'1793958291119'}else{'1793953507517'}}
-                        'none' {'json-preview-absent-b03201b002c8'}
-                    }
-                    if ($q) {
-                        Set-Query $edit $inputValue $hwnd $q
-                        $null=Wait-Element $window { param($name) $name -eq '查找' }
-                    }
-                    $action=[Diagnostics.Stopwatch]::StartNew()
-                    if(![PreviewWindowInput]::PostMessage($hwnd,0x0100,0x72,0x003d0001)){throw 'F3 delivery failed'}
-                    $null=[PreviewWindowInput]::PostMessage($hwnd,0x0101,0x72,[IntPtr]([long]0xc03d0001u))
-                    if($case -eq 'none') {
-                        $null=Wait-Element $window { param($name) $name -eq '未找到匹配' }
-                    } else {
-                        $expected=if($case -eq 'next'){2}else{1}
-                        $null=Wait-Element $window { param($name) $name -match "^第\s*$expected\s*处匹配" }
-                    }
-                    $searchData[$case + '_ms']=[math]::Round($action.Elapsed.TotalMilliseconds,2)
-                    if($case -eq 'tail'){
-                        $null=Wait-Element $window { param($name) if($jsonLines){$name -match "ts_ms\s+$q"}else{$name -match 'WSManStackVersion\s+\S+'} }
-                        $searchData['tail_jump_ms']=[math]::Round($action.Elapsed.TotalMilliseconds,2)
-                    }
-                }
-            } elseif (!$empty -and $App -ne 'Dadroit') {
-                $rootRow=Wait-Element $window {param($name) $name -match '▸\s+(\$|JSONL)'}
-                $rootBounds=$rootRow.Current.BoundingRectangle
-                $action=[Diagnostics.Stopwatch]::StartNew()
-                $hwnd=[IntPtr]$window.Current.NativeWindowHandle
-                # Right arrow expands the selected root through the viewer's ordinary key handler.
-                if($Explorer){
-                    [PreviewWindowInput]::PressRow($hwnd,[int]($rootBounds.Left+20),[int]($rootBounds.Top+$rootBounds.Height/2))
-                }else{
-                    if(![PreviewWindowInput]::PostMessage($hwnd,0x0100,0x27,0x014d0001)){throw 'Key delivery failed'}
-                    $null=[PreviewWindowInput]::PostMessage($hwnd,0x0101,0x27,[IntPtr]([long]0xc14d0001u))
-                }
-                $firstRow=Wait-Element $window {param($name) $name -match '^\s*(Id\s|[▸▾]\s+#1\s)'}
-                $childrenMs=$action.Elapsed.TotalMilliseconds
-                $firstFieldMs=$sw.Elapsed.TotalMilliseconds
-                if($Explorer -and $sample -like '*.json'){
-                    $idValue=$firstRow.Current.Name -replace '^\s*Id\s+',''
-                    Send-Key $hwnd 0x24
-                    Send-Key $hwnd 0x28
-                    $null=Wait-Element $window {param($name)$name.StartsWith('字节 ') -and $name.EndsWith($idValue)}
-                    $firstSelectedMs=$sw.Elapsed.TotalMilliseconds
-                    Send-Key $hwnd 0x24
-                }
-                if($sample -match '^sdk-events_([sx])\.jsonl$'){
-                    $records=if($Matches[1] -eq 's'){24325}else{50232}
-                    $null=Wait-Element $window {param($name) $name -match "JSONL\s+$records\s+条记录"}
-                    $indexMs=$action.Elapsed.TotalMilliseconds
-                    $indexedProcess=Get-Process -Id $window.Current.ProcessId
-                    $indexMemory=@{working_set_bytes=$indexedProcess.WorkingSet64;private_bytes=$indexedProcess.PrivateMemorySize64}
-                    $scroll=Measure-Scroll $window
-                }else{
-                    $null=Wait-Element $window {param($name)$name -match '▸\s+Platform\s+\{'}
-                    $rootMs=$action.Elapsed.TotalMilliseconds
-                    Send-Key $hwnd 0x28
-                    if($sample -eq '30MB.json'){Send-Key $hwnd 0x28}
-                    Send-Key $hwnd 0x28
-                    $expand=[Diagnostics.Stopwatch]::StartNew()
-                    Send-Key $hwnd 0x27
-                    $null=Wait-Element $window {param($name)$name -match '▸\s+Types\s+\{'}
-                    $typesMs=$expand.Elapsed.TotalMilliseconds
-                }
             }
             $live=Get-Process -Id $window.Current.ProcessId
             $probe.Dispose()
@@ -466,7 +301,7 @@ foreach ($sample in $Samples) {
                 [pscustomobject]@{
                     app=$App;sample=$sample;run=$run;cold_data=[bool]$ColdData;window_ms=[math]::Round($windowMs,2)
                     sha256=$binaryHash;workload=$(if($Search){'search'}else{'navigation'})
-                    query_set=$(if($sample -like '*.jsonl' -and ($Search -or $App -eq 'Dadroit')){'log-scalars'})
+                    query_set=$(if($sample -like '*.jsonl'){'log-scalars'})
                     ready_private_bytes=$readyPrivate;ready_working_set_bytes=$readyWorking
                     private_desktop=[bool]$isolated;cold_image=[bool]$ColdImage;explorer=[bool]$Explorer
                     first_field_ms=$firstFieldMs;first_selected_ms=$firstSelectedMs;all_root_ms=$rootMs;types_ms=$typesMs
@@ -488,7 +323,7 @@ foreach ($sample in $Samples) {
                     }
                 }
                 if($process){$process.Dispose()}
-                if($Explorer -and $App -eq 'Dadroit'){Start-Sleep -Milliseconds 1250}
+                if($Explorer){Start-Sleep -Milliseconds 1250}
             }
             if($copy){Remove-Item -LiteralPath $copy}
             foreach($part in $imageFiles){[IO.File]::Delete($part)}
