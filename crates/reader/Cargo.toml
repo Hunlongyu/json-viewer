@@ -1,0 +1,10 @@
+[package]
+name = "preview-reader"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+memchr = "2"
+memmap2 = "0.9"
+sonic-rs = "0.5"
+tempfile = "3"

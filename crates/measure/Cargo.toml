@@ -1,0 +1,16 @@
+[package]
+name = "preview-measure"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+preview-reader = { path = "../reader" }
+memchr = "2"
+memmap2 = "0.9"
+sonic-rs = "0.5"
+serde = "1"
+serde_json = { version = "1", features = ["raw_value"] }
+simd-json = "0.19"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_ProcessStatus", "Win32_System_Threading"] }

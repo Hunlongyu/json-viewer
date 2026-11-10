@@ -1,0 +1,134 @@
+#include <windows.h>
+#include "commands.h"
+#include "version.h"
+
+IDI_JSON_VIEWER ICON "json-viewer.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION VIEWER_VERSION_NUMBERS
+ PRODUCTVERSION VIEWER_VERSION_NUMBERS
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "FileDescription", "JSON Viewer"
+      VALUE "FileVersion", VIEWER_VERSION_STRING
+      VALUE "OriginalFilename", "json-viewer.exe"
+      VALUE "ProductName", "JSON Viewer"
+      VALUE "ProductVersion", VIEWER_VERSION_STRING
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END
+
+MAIN_MENU MENU
+BEGIN
+  POPUP "&File"
+  BEGIN
+    MENUITEM "New Window\tCtrl+Shift+N", CMD_NEW
+    MENUITEM "&Open...\tCtrl+O", CMD_OPEN
+    MENUITEM "Open Clipboard...\tCtrl+V", CMD_CLIPBOARD
+    POPUP "Open &Recent"
+    BEGIN
+      MENUITEM "(Empty)", CMD_RECENT, GRAYED
+    END
+    MENUITEM SEPARATOR
+    POPUP "Export Data As"
+    BEGIN
+      MENUITEM "JSON", CMD_DATA_EXPORT
+      MENUITEM "Minified JSON", CMD_DATA_EXPORT_MIN
+      MENUITEM "Formatted JSON", CMD_DATA_EXPORT_FORMAT
+    END
+    POPUP "Export Selection As"
+    BEGIN
+      MENUITEM "JSON\tCtrl+E", CMD_SEL_EXPORT
+      MENUITEM "Minified JSON\tCtrl+Shift+E", CMD_SEL_EXPORT_MIN
+      MENUITEM "Formatted JSON\tCtrl+Shift+Alt+E", CMD_SEL_EXPORT_FORMAT
+    END
+    MENUITEM SEPARATOR
+    MENUITEM "&Close\tAlt+F4", CMD_CLOSE
+  END
+  POPUP "&Edit"
+  BEGIN
+    MENUITEM "&Find\tCtrl+F", CMD_FIND
+    MENUITEM "Find Next\tF3", CMD_NEXT
+    MENUITEM "Find Previous\tShift+F3", CMD_PREVIOUS
+    MENUITEM SEPARATOR
+    MENUITEM "Copy Data\tCtrl+D", CMD_DATA_COPY
+    POPUP "Copy Data As"
+    BEGIN
+      MENUITEM "Minified Data\tCtrl+Shift+D", CMD_DATA_MIN
+      MENUITEM "Formatted Data\tCtrl+Shift+Alt+D", CMD_DATA_FORMAT
+    END
+    MENUITEM SEPARATOR
+    MENUITEM "Copy Selection Name\tCtrl+N", CMD_NAME
+    MENUITEM "Copy Selection Value\tCtrl+C", CMD_VALUE
+    POPUP "Copy Selection Value As"
+    BEGIN
+      MENUITEM "Minified Value\tCtrl+Shift+C", CMD_VALUE_MIN
+      MENUITEM "Formatted Value\tCtrl+Shift+Alt+C", CMD_VALUE_FORMAT
+    END
+    MENUITEM SEPARATOR
+    MENUITEM "Copy Selection Path\tCtrl+P", CMD_PATH
+    MENUITEM SEPARATOR
+    POPUP "Search Scope"
+    BEGIN
+      MENUITEM "Keys and Values", CMD_SCOPE_BOTH
+      MENUITEM "Keys", CMD_SCOPE_KEYS
+      MENUITEM "Values", CMD_SCOPE_VALUES
+      MENUITEM "Document Text", CMD_SCOPE_RAW
+    END
+  END
+  POPUP "&View"
+  BEGIN
+    MENUITEM "Hide Status Bar", CMD_STATUS
+    MENUITEM "Show Node Path", CMD_NODE_PATH
+    MENUITEM SEPARATOR
+    MENUITEM "Refresh Data\tF5", CMD_REFRESH
+    MENUITEM SEPARATOR
+    MENUITEM "Expand Selected Node\tAlt+Right", CMD_EXPAND
+    MENUITEM "Collapse Selected Node\tAlt+Left", CMD_COLLAPSE
+    MENUITEM "Collapse All\tShift+Alt+Left", CMD_COLLAPSE_ALL
+    MENUITEM SEPARATOR
+    MENUITEM "First Row\tHome", CMD_FIRST
+    MENUITEM "Last Row\tEnd", CMD_LAST
+  END
+  POPUP "&Help"
+  BEGIN
+    MENUITEM "Check For &Update", CMD_UPDATE
+    MENUITEM "Release Notes", CMD_NOTES
+    MENUITEM SEPARATOR
+    MENUITEM "Keyboard Shortcuts\tF1", CMD_SHORTCUTS
+    MENUITEM "Legal", CMD_LEGAL
+    MENUITEM "About", CMD_ABOUT
+  END
+END
+
+MAIN_KEYS ACCELERATORS
+BEGIN
+  "N", CMD_NEW, VIRTKEY, CONTROL, SHIFT
+  "O", CMD_OPEN, VIRTKEY, CONTROL
+  "V", CMD_CLIPBOARD, VIRTKEY, CONTROL
+  "F", CMD_FIND, VIRTKEY, CONTROL
+  "D", CMD_DATA_COPY, VIRTKEY, CONTROL
+  "D", CMD_DATA_MIN, VIRTKEY, CONTROL, SHIFT
+  "D", CMD_DATA_FORMAT, VIRTKEY, CONTROL, SHIFT, ALT
+  "N", CMD_NAME, VIRTKEY, CONTROL
+  "C", CMD_VALUE, VIRTKEY, CONTROL
+  "C", CMD_VALUE_MIN, VIRTKEY, CONTROL, SHIFT
+  "C", CMD_VALUE_FORMAT, VIRTKEY, CONTROL, SHIFT, ALT
+  "P", CMD_PATH, VIRTKEY, CONTROL
+  "E", CMD_SEL_EXPORT, VIRTKEY, CONTROL
+  "E", CMD_SEL_EXPORT_MIN, VIRTKEY, CONTROL, SHIFT
+  "E", CMD_SEL_EXPORT_FORMAT, VIRTKEY, CONTROL, SHIFT, ALT
+  VK_RIGHT, CMD_EXPAND, VIRTKEY, ALT
+  VK_LEFT, CMD_COLLAPSE, VIRTKEY, ALT
+  VK_LEFT, CMD_COLLAPSE_ALL, VIRTKEY, ALT, SHIFT
+  VK_F5, CMD_REFRESH, VIRTKEY
+END

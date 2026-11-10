@@ -1,0 +1,53 @@
+name: Windows release
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag and prepare notes
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $number = '(0|[1-9][0-9]*)'
+          if ($tag -notmatch "^v$number\.$number\.$number$") { throw "Invalid version tag" }
+          $version = $tag.Substring(1)
+          $escaped = [regex]::Escape($version)
+          if ((Get-Content CMakeLists.txt -Raw) -notmatch "project\(json_viewer VERSION $escaped LANGUAGES") { throw "CMake version mismatch" }
+          $entry = [regex]::Match((Get-Content CHANGELOG.md -Raw), "(?ms)^## $escaped\s*\r?\n(?<notes>.*?)(?=^## |\z)")
+          if (!$entry.Success) { throw "Missing release notes" }
+          $base = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/download/$tag"
+          @(
+            $entry.Groups['notes'].Value.Trim()
+            ''
+            "[SHA-256 校验文件]($base/checksums.txt)"
+            ''
+            '| 系统 | 下载 |'
+            '| --- | --- |'
+            "| Windows x64 | [![便携 ZIP](https://img.shields.io/badge/Portable-ZIP-blue)]($base/json-viewer-windows-x64.zip) [![单文件 EXE](https://img.shields.io/badge/x64-EXE-blue)]($base/json-viewer.exe) |"
+          ) | Set-Content "$env:RUNNER_TEMP/release.md" -Encoding utf8
+      - name: Package and test
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          ./scripts/package-windows.ps1
+          cmake --build target/c-win64 --config MinSizeRel --target reader-test view-test --parallel
+          ctest --test-dir target/c-win64 -C MinSizeRel --output-on-failure
+          $assets = @('dist/windows-x64/json-viewer.exe','dist/json-viewer-windows-x64.zip')
+          foreach ($file in ($assets + 'dist/checksums.txt')) {
+            Write-Output "Release asset $([IO.Path]::GetFileName($file)) $((Get-Item $file).Length) $((Get-FileHash $file).Hash)"
+          }
+      - name: Publish tested files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create $env:GITHUB_REF_NAME --verify-tag --title "JSON Viewer $env:GITHUB_REF_NAME" --notes-file "$env:RUNNER_TEMP/release.md" dist/windows-x64/json-viewer.exe dist/json-viewer-windows-x64.zip dist/checksums.txt

@@ -1,53 +1,70 @@
-cmake_minimum_required(VERSION 3.28)
-
-project(json_viewer LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-if (MSVC)
-    add_compile_options("/utf-8")
+cmake_minimum_required(VERSION 3.24)
+project(json_viewer VERSION 0.1.0 LANGUAGES C RC)
+if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+  message(FATAL_ERROR "Choose a 64-bit Windows toolchain.")
 endif()
-
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  add_compile_options(/utf-8 /Gy /Gw)
+  add_link_options($<$<NOT:$<CONFIG:Debug>>:/OPT:REF,ICF>)
+endif()
 include(FetchContent)
-FetchContent_Declare(
-    sw
-    GIT_REPOSITORY https://github.com/Mzying2001/sw
-    GIT_TAG        0.0.7
-    SOURCE_SUBDIR  sw
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(sw)
-
-FetchContent_Declare(
-    simdjson
-    GIT_REPOSITORY https://github.com/simdjson/simdjson
-    GIT_TAG        v4.1.0
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(simdjson)
-
-set(Files 
-    "src/main.cpp"
-    "src/views/viewer.cpp"
-    "assets/resource.rc"
-)
-
-enable_language(RC)
-set(CMAKE_RC_COMPILER_INIT windres)
-
-if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
-    add_executable(${PROJECT_NAME} ${Files})
-else()
-    add_executable(${PROJECT_NAME} WIN32 ${Files})
+set(CUI_BUILD_EXAMPLES OFF)
+set(CUI_BUILD_TESTS OFF)
+set(CUI_STB_IMAGE OFF)
+set(CUI_PLATFORM win32)
+FetchContent_Declare(cui URL "${CMAKE_CURRENT_SOURCE_DIR}/vendor/cui-7bb08ff7.tar.gz"
+  URL_HASH SHA256=225dc6cad26a9793fb24f7111b9e9e1ee84d5d338be3413974a37bc776604513
+  PATCH_COMMAND "${CMAKE_COMMAND}" -DCUI_SOURCE_DIR=<SOURCE_DIR> -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cui-scrollbar.cmake")
+FetchContent_MakeAvailable(cui)
+set(PCRE2_BUILD_PCRE2GREP OFF CACHE BOOL "" FORCE)
+set(PCRE2_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PCRE2_SUPPORT_JIT OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(pcre2 URL "${CMAKE_CURRENT_SOURCE_DIR}/vendor/pcre2-10.49.tgz"
+  URL_HASH SHA256=929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae)
+FetchContent_MakeAvailable(pcre2)
+# Consume only the updater library. The upstream root also defines its demo and test programs.
+FetchContent_Declare(updater URL "${CMAKE_CURRENT_SOURCE_DIR}/vendor/updater-b81aac54.tar.gz"
+  URL_HASH SHA256=86b5a33eed47fafb2ff4e8419fc44ab406c05f7bae8a832446eb9856755808dc
+  SOURCE_SUBDIR src)
+FetchContent_MakeAvailable(updater)
+set(update_src "${updater_SOURCE_DIR}/src")
+include(cmake/updater-empty-release.cmake)
+add_library(winautoupdate STATIC
+  ${update_src}/au_update.c ${update_src}/au_version.c ${update_src}/au_gh.c
+  ${update_src}/au_download.c ${update_src}/au_apply.c ${update_src}/au_http.c
+  ${update_src}/au_hash.c ${update_src}/au_fs.c ${update_src}/au_str.c ${CMAKE_CURRENT_BINARY_DIR}/au_web.c
+  ${update_src}/third_party/cJSON.c)
+set_target_properties(winautoupdate PROPERTIES C_STANDARD 17)
+target_compile_definitions(winautoupdate PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS CJSON_HIDE_SYMBOLS)
+target_include_directories(winautoupdate PUBLIC "${updater_SOURCE_DIR}/include" PRIVATE ${update_src} ${update_src}/third_party)
+target_link_libraries(winautoupdate PUBLIC winhttp bcrypt)
+add_library(preview-reader STATIC native/reader.c native/file.c)
+target_link_libraries(preview-reader PRIVATE pcre2-8-static)
+target_compile_definitions(preview-reader PRIVATE PCRE2_STATIC PCRE2_CODE_UNIT_WIDTH=8)
+if(MSVC)
+  target_compile_options(preview-reader PRIVATE $<$<CONFIG:MinSizeRel>:/O2>)
 endif()
-
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets
-)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE 
-    sw
-    simdjson
-)
+target_include_directories(preview-reader PUBLIC native)
+target_compile_definitions(preview-reader PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+add_executable(json-viewer WIN32 native/app.c native/menu.rc native/recent.c native/update.c native/jobs.c native/view.c native/transfer.c native/tree_ui.c)
+target_compile_definitions(json-viewer PRIVATE VIEWER_VERSION="${PROJECT_VERSION}")
+configure_file(native/version.h.in generated/version.h @ONLY)
+target_include_directories(json-viewer PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_include_directories(json-viewer PRIVATE "${cui_SOURCE_DIR}/src/platform")
+target_link_libraries(json-viewer PRIVATE preview-reader winautoupdate cui::cui comctl32 comdlg32 shell32 advapi32 ole32 oleacc uuid)
+include(CTest)
+if(BUILD_TESTING)
+  # Private benchmark inputs are optional; synthetic fixtures always run.
+  if(EXISTS "${CMAKE_SOURCE_DIR}/bin/sdk-events_x.jsonl")
+    set(sample_dir "${CMAKE_SOURCE_DIR}/bin")
+  endif()
+  add_executable(reader-test native/tests.c)
+  target_link_libraries(reader-test PRIVATE preview-reader)
+  add_test(NAME native-reader COMMAND reader-test ${sample_dir})
+  add_executable(view-test native/view_tests.c native/view.c native/jobs.c native/transfer.c)
+  target_link_libraries(view-test PRIVATE preview-reader ole32)
+  add_test(NAME native-view COMMAND view-test ${sample_dir})
+endif()
