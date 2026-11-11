@@ -564,7 +564,7 @@ static void command(Application *a, unsigned cmd) {
         a->about = true;
         break;
     case CMD_UPDATE:
-        update_check(&a->update, a->hwnd);
+        update_check(&a->update, a->hwnd, false);
         break;
     case CMD_NOTES:
         shell_open(a, RELEASES_URL);
@@ -575,7 +575,19 @@ static void command(Application *a, unsigned cmd) {
 static void status_bar(Application *a, cui_ctx *ui, float width) {
     View *v = &a->view;
     cui_status_bar(ui, "file-status") {
-        if (!v->doc) {
+        if (v->filename && v->status[0] && strncmp(v->status, "Ready", strlen("Ready")) &&
+            strncmp(v->status, "Search scope", strlen("Search scope")) &&
+            strncmp(v->status, "Match ", 6) && strcmp(v->status, "Searching") &&
+            strcmp(v->status, "No matches") && strcmp(v->status, v->search_error) &&
+            strncmp(v->status, "Find:", 5) && strcmp(v->status, "Search cancelled")) {
+            /* Keep messages in the footer without changing the tree's layout.
+               A fill-width text item truncates with a full-text hover tooltip. */
+            cui_row(ui, .width = CUI_FILL, .height = CUI_PX(22), .pad_x = 6) {
+                cui_text(ui, v->status, .width = CUI_FILL, .nowrap = true,
+                         .size = ui->theme.text_sm, .line_height = 1.3f,
+                         .color = CUI_COLOR_TEXT_SECONDARY);
+            }
+        } else if (!v->doc) {
             cui_status_bar_text(ui, v->filename ? "Open file" : "Ready");
         } else {
             char text[96], bytes[96];
@@ -689,13 +701,6 @@ static void frame(Application *a) {
                 cui_tooltip(ui, v->search_error);
         }
         cui_toolbar_end(ui);
-        if (v->filename && v->status[0] && strncmp(v->status, "Ready", strlen("Ready")) &&
-            strncmp(v->status, "Search scope", strlen("Search scope")) &&
-            strncmp(v->status, "Match ", 6) && strcmp(v->status, "Searching") &&
-            strcmp(v->status, "No matches") && strcmp(v->status, v->search_error) &&
-            strncmp(v->status, "Find:", 5) && strcmp(v->status, "Search cancelled"))
-            cui_text(ui, v->status, .width = CUI_FILL, .nowrap = true,
-                     .color = CUI_COLOR_TEXT_SECONDARY);
         if (v->doc)
             preview_tree(ui, v, a->fonts.font, a->fonts.size, &a->tree_click,
                          cui_app_size(a->app).x, &a->ensure_visible,
@@ -868,6 +873,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prev, PWSTR cmd, int show) {
         LocalFree(argv);
     a.app->frame_cb = live_frame;
     a.app->frame_user = &a;
+    update_check(&a.update, a.hwnd, true);
     while (cui_app_frame(a.app))
         frame(&a);
     a.app->frame_cb = NULL;

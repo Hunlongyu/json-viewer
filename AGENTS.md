@@ -8,7 +8,7 @@ Windows x64 只读 JSON / JSONL 工具。正式程序使用 C11、Win32 和 CUI�
 
 ```powershell
 pwsh -File scripts/package-windows.ps1
-cmake --build target/c-win64 --config MinSizeRel --target reader-test view-test --parallel
+cmake --build target/c-win64 --config MinSizeRel --target reader-test view-test update-test --parallel
 ctest --test-dir target/c-win64 -C MinSizeRel --output-on-failure
 pwsh -File scripts/test-node-menu.ps1
 ```
@@ -19,6 +19,6 @@ pwsh -File scripts/test-node-menu.ps1
 
 ## 工程与发布
 
-保持打开源文件的只读语义，按字节位置区分重复键。菜单命令、快捷键与 README 应同步。软件仅在用户发起检查更新时访问发布服务。
+保持打开源文件的只读语义，按字节位置区分重复键。菜单命令、快捷键与 README 应同步。软件启动时在后台检查更新，也支持用户手动检查；自动检查仅在发现可用更新时提示，下载和安装由用户确认。
 
 版本取自根 CMakeLists.txt。更新 CHANGELOG.md 后推送对应的 `vX.Y.Z` 标签，Actions 构建、测试并将 Windows x64 EXE、便携 ZIP 和校验文件发布到同一标签。

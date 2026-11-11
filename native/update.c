@@ -61,13 +61,17 @@ void update_dispose(ViewerUpdate *u) {
         au_destroy(u->ctx);
     memset(u, 0, sizeof *u);
 }
-void update_check(ViewerUpdate *u, HWND window) {
+void update_check(ViewerUpdate *u, HWND window, bool background) {
     if (u->state != UPDATE_IDLE) {
-        u->open = true;
+        if (!background) {
+            u->background = false;
+            u->open = true;
+        }
         return;
     }
     u->window = window;
-    u->open = true;
+    u->background = background;
+    u->open = !background;
     au_config_t config = {.owner = "Hunlongyu",
                           .repo = "json-viewer",
                           .current_version = VIEWER_VERSION,
@@ -80,8 +84,11 @@ void update_check(ViewerUpdate *u, HWND window) {
                           .userdata = u};
     u->ctx = au_create(&config);
     u->state = CHECKING;
-    if (!u->ctx || !(u->thread = (HANDLE)_beginthreadex(NULL, 0, check_worker, u, 0, NULL)))
+    if (!u->ctx || !(u->thread = (HANDLE)_beginthreadex(NULL, 0, check_worker, u, 0, NULL))) {
         note(u, "Could not start the update check.");
+        if (background)
+            update_dispose(u);
+    }
 }
 static void finished(ViewerUpdate *u) {
     CloseHandle(u->thread);
@@ -101,6 +108,13 @@ static void finished(ViewerUpdate *u) {
         note(u, "The new release has no matching Windows executable.");
     } else {
         u->state = AVAILABLE;
+    }
+    if (u->background) {
+        u->background = false;
+        if (u->state == AVAILABLE)
+            u->open = true;
+        else
+            update_dispose(u);
     }
 }
 static void download(ViewerUpdate *u) {
@@ -125,6 +139,11 @@ static void download(ViewerUpdate *u) {
 void update_draw(ViewerUpdate *u, cui_ctx *ui, bool exporting) {
     if (u->thread && WaitForSingleObject(u->thread, 0) == WAIT_OBJECT_0)
         finished(u);
+    /* A hidden startup check is still active; only a dismissed dialog cancels. */
+    if (u->background) {
+        cui_request_wakeup(ui, 0.08f);
+        return;
+    }
     if (!u->open) {
         if (u->thread)
             au_cancel(u->ctx);

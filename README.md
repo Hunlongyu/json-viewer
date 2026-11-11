@@ -42,6 +42,8 @@ Windows x64 上的只读 JSON 和 JSON Lines 查看器。<br>
 
 按 `F1` 查看更多快捷键。最近打开的 8 个文件可从 `File → Open Recent` 找到。
 
+解析错误、打开失败等提示显示在底部状态栏，查找栏下方直接显示文档树。状态栏可通过 `View → Hide Status Bar / Show Status Bar` 隐藏或显示。
+
 ## 字体与便携配置
 
 通过 `View → Change Font...` 打开 Windows 字体对话框，调整树文字的字体、字形和字号。默认字体是 Segoe UI，大小为 13 个逻辑像素。对话框以磅为单位，可选 6 至 36 磅。
@@ -49,7 +51,7 @@ Windows x64 上的只读 JSON 和 JSON Lines 查看器。<br>
 > [!TIP]
 > 换电脑时，把 `json-viewer.exe` 和同目录的 `settings.ini` 一起复制，就能带走字体设置。程序目录不可写时，配置会保存到 `%LOCALAPPDATA%\JSON Viewer\settings.ini`。首次在可写目录中运行时，程序会沿用当前用户已有的设置。
 
-检查新版本时，选择 `Help → Check For Update`。发现更新后，可在窗口内下载并重启安装。[查看发布记录](https://github.com/Hunlongyu/json-viewer/releases)
+程序启动后会在后台检查新版本，仅发现可用更新时弹出提示；已是最新版或检查失败时不打扰使用。也可以选择 `Help → Check For Update` 手动检查。下载更新和重启安装均需点击确认。[查看发布记录](https://github.com/Hunlongyu/json-viewer/releases)
 
 ## 从源码构建
 
@@ -67,7 +69,7 @@ pwsh -File scripts/package-windows.ps1
 <summary>运行读取器、树视图和 Windows 界面回归测试</summary>
 
 ```powershell
-cmake --build target/c-win64 --config MinSizeRel --target reader-test view-test --parallel
+cmake --build target/c-win64 --config MinSizeRel --target reader-test view-test update-test --parallel
 ctest --test-dir target/c-win64 -C MinSizeRel --output-on-failure
 pwsh -File scripts/test-node-menu.ps1
 pwsh -File scripts/test-document-switch.ps1

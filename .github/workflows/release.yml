@@ -49,7 +49,7 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           ./scripts/package-windows.ps1
-          cmake --build target/c-win64 --config MinSizeRel --target reader-test view-test --parallel
+          cmake --build target/c-win64 --config MinSizeRel --target reader-test view-test update-test --parallel
           ctest --test-dir target/c-win64 -C MinSizeRel --output-on-failure
           $assets = @('dist/windows-x64/json-viewer.exe','dist/json-viewer-windows-x64.zip')
           foreach ($file in ($assets + 'dist/checksums.txt')) {
